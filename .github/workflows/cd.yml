@@ -1,0 +1,89 @@
+name: CD for bootstrap deploy
+
+on:
+  push:
+    branches:
+      - dev
+      - homolog
+      - prod
+
+jobs:
+  BootstrapBucketCreation:
+    name: Bootstrap (${{ github.ref_name }})
+    runs-on: ubuntu-latest
+    if: contains(fromJSON('["dev","homolog","prod"]'), github.ref_name)
+    permissions:
+      id-token: write
+      contents: read
+
+    outputs:
+      s3_bucket_name: ${{ steps.bootstrap.outputs.s3_bucket_name }}
+      dynamo_table_name: ${{ steps.bootstrap.outputs.dynamo_table_name }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set AWS account and region for branch
+        run: |
+          case "${{ github.ref_name }}" in
+            dev)
+              echo "AWS_ACCOUNT_ID=${{ secrets.AWS_ACCOUNT_ID_DEV }}" >> $GITHUB_ENV
+              echo "AWS_REGION=${{ vars.AWS_REGION_DEV }}" >> $GITHUB_ENV
+              ;;
+            homolog)
+              echo "AWS_ACCOUNT_ID=${{ secrets.AWS_ACCOUNT_ID_HOMOLOG }}" >> $GITHUB_ENV
+              echo "AWS_REGION=${{ vars.AWS_REGION_HOMOLOG }}" >> $GITHUB_ENV
+              ;;
+            prod)
+              echo "AWS_ACCOUNT_ID=${{ secrets.AWS_ACCOUNT_ID_PROD }}" >> $GITHUB_ENV
+              echo "AWS_REGION=${{ vars.AWS_REGION_PROD }}" >> $GITHUB_ENV
+              ;;
+            *)
+              echo "Branch não mapeada."
+              exit 1
+              ;;
+          esac
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: arn:aws:iam::${{ env.AWS_ACCOUNT_ID }}:role/GithubActionsRole
+          role-session-name: github-action-terraform-bootstrap
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.6.6
+          cli_config_credentials_token: ${{ secrets.TFE_API_TOKEN }}
+
+      - name: Bootstrap S3 state backend (this repo)
+        id: bootstrap
+        shell: bash
+        working-directory: ./terraform
+        env:
+          AWS_ACCOUNT_ID: ${{ env.AWS_ACCOUNT_ID }}
+          AWS_REGION: ${{ env.AWS_REGION }}
+        run: |
+          set -euo pipefail
+
+          # State do PRÓPRIO módulo bootstrap (objeto no S3; bucket/tabela precisam existir antes do 1º init)
+          BACKEND_BUCKET="tf-org-bootstrap-state-${AWS_ACCOUNT_ID}"
+          BACKEND_TABLE="tf-org-bootstrap-locks-${AWS_ACCOUNT_ID}"
+          BACKEND_KEY="bootstrap/terraform.tfstate"
+
+          echo "Backend deste run: s3://${BACKEND_BUCKET}/${BACKEND_KEY} (locks: ${BACKEND_TABLE})"
+
+          terraform init -input=false \
+            -backend-config="bucket=${BACKEND_BUCKET}" \
+            -backend-config="key=${BACKEND_KEY}" \
+            -backend-config="region=${AWS_REGION}" \
+            -backend-config="dynamodb_table=${BACKEND_TABLE}"
+
+          terraform apply -auto-approve -input=false \
+            -var="aws_account_id=${AWS_ACCOUNT_ID}" \
+            -var="aws_region=${AWS_REGION}"
+
+          echo "s3_bucket_name=$(terraform output -raw s3_bucket_name)" >> "$GITHUB_OUTPUT"
+          echo "dynamo_table_name=$(terraform output -raw dynamodb_table_name)" >> "$GITHUB_OUTPUT"
