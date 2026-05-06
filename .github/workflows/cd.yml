@@ -57,6 +57,7 @@ jobs:
         with:
           terraform_version: 1.6.6
           cli_config_credentials_token: ${{ secrets.TFE_API_TOKEN }}
+          terraform_wrapper: false
 
       - name: Bootstrap S3 state backend (this repo)
         id: bootstrap
@@ -91,7 +92,8 @@ jobs:
             terraform apply -auto-approve -input=false \
               -var="aws_account_id=${AWS_ACCOUNT_ID}" \
               -var="aws_region=${AWS_REGION}"
-            backend_init -migrate-state
+            # -reconfigure evita restos do init -backend=false confundirem o backend S3
+            backend_init -reconfigure -migrate-state
           fi
 
           terraform apply -auto-approve -input=false \
