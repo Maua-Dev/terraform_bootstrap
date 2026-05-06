@@ -29,15 +29,15 @@ jobs:
           case "${{ github.ref_name }}" in
             dev)
               echo "AWS_ACCOUNT_ID=${{ secrets.AWS_ACCOUNT_ID_DEV }}" >> $GITHUB_ENV
-              echo "AWS_REGION=${{ vars.AWS_REGION_DEV }}" >> $GITHUB_ENV
+              echo "AWS_REGION=${{ vars.AWS_REGION }}" >> $GITHUB_ENV
               ;;
             homolog)
               echo "AWS_ACCOUNT_ID=${{ secrets.AWS_ACCOUNT_ID_HOMOLOG }}" >> $GITHUB_ENV
-              echo "AWS_REGION=${{ vars.AWS_REGION_HOMOLOG }}" >> $GITHUB_ENV
+              echo "AWS_REGION=${{ vars.AWS_REGION }}" >> $GITHUB_ENV
               ;;
             prod)
               echo "AWS_ACCOUNT_ID=${{ secrets.AWS_ACCOUNT_ID_PROD }}" >> $GITHUB_ENV
-              echo "AWS_REGION=${{ vars.AWS_REGION_PROD }}" >> $GITHUB_ENV
+              echo "AWS_REGION=${{ vars.AWS_REGION }}" >> $GITHUB_ENV
               ;;
             *)
               echo "Branch não mapeada."
