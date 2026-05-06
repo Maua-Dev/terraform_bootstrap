@@ -68,18 +68,31 @@ jobs:
         run: |
           set -euo pipefail
 
-          # State do PRÓPRIO módulo bootstrap (objeto no S3; bucket/tabela precisam existir antes do 1º init)
-          BACKEND_BUCKET="tf-org-bootstrap-state-${AWS_ACCOUNT_ID}"
-          BACKEND_TABLE="tf-org-bootstrap-locks-${AWS_ACCOUNT_ID}"
-          BACKEND_KEY="bootstrap/terraform.tfstate"
+          # Mesmo bucket/tabela que o módulo cria (outputs). Key separada para o state do próprio bootstrap.
+          WORKSPACE_BUCKET="tf-org-workspace-state-${AWS_ACCOUNT_ID}"
+          WORKSPACE_TABLE="tf-org-workspace-locks-${AWS_ACCOUNT_ID}"
+          STATE_KEY="bootstrap/terraform.tfstate"
 
-          echo "Backend deste run: s3://${BACKEND_BUCKET}/${BACKEND_KEY} (locks: ${BACKEND_TABLE})"
+          backend_init() {
+            terraform init -input=false \
+              -backend-config="bucket=${WORKSPACE_BUCKET}" \
+              -backend-config="key=${STATE_KEY}" \
+              -backend-config="region=${AWS_REGION}" \
+              -backend-config="dynamodb_table=${WORKSPACE_TABLE}" \
+              "$@"
+          }
 
-          terraform init -input=false \
-            -backend-config="bucket=${BACKEND_BUCKET}" \
-            -backend-config="key=${BACKEND_KEY}" \
-            -backend-config="region=${AWS_REGION}" \
-            -backend-config="dynamodb_table=${BACKEND_TABLE}"
+          if aws s3api head-bucket --bucket "${WORKSPACE_BUCKET}" 2>/dev/null; then
+            echo "Backend: s3://${WORKSPACE_BUCKET}/${STATE_KEY} (locks: ${WORKSPACE_TABLE})"
+            backend_init
+          else
+            echo "Primeiro bootstrap nesta conta: apply com state local, depois migração para s3://${WORKSPACE_BUCKET}/${STATE_KEY}"
+            terraform init -backend=false -input=false
+            terraform apply -auto-approve -input=false \
+              -var="aws_account_id=${AWS_ACCOUNT_ID}" \
+              -var="aws_region=${AWS_REGION}"
+            backend_init -migrate-state
+          fi
 
           terraform apply -auto-approve -input=false \
             -var="aws_account_id=${AWS_ACCOUNT_ID}" \

@@ -87,6 +87,6 @@ output "dynamodb_table_name" {
 }
 
 output "bootstrap_state_hint" {
-  description = "Lembrete: o state deste módulo fica no bucket/tabela passados no terraform init -backend-config (não nos outputs acima)."
-  value       = "Ver comentário no topo de main.tf"
+  description = "State deste repo: mesmo bucket/tabela dos outputs, key bootstrap/terraform.tfstate."
+  value       = "s3://${aws_s3_bucket.terraform_state.id}/bootstrap/terraform.tfstate"
 }
