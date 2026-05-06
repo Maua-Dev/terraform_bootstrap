@@ -59,46 +59,35 @@ jobs:
           cli_config_credentials_token: ${{ secrets.TFE_API_TOKEN }}
           terraform_wrapper: false
 
-      - name: Bootstrap S3 state backend (this repo)
+      - name: Bootstrap S3 state backend
         id: bootstrap
         shell: bash
         working-directory: ./terraform
         env:
-          AWS_ACCOUNT_ID: ${{ env.AWS_ACCOUNT_ID }}
-          AWS_REGION: ${{ env.AWS_REGION }}
+            AWS_ACCOUNT_ID: ${{ env.AWS_ACCOUNT_ID }}
+            AWS_REGION: ${{ env.AWS_REGION }}
         run: |
-          set -euo pipefail
+            set -euo pipefail
 
-          # Mesmo bucket/tabela que o módulo cria (outputs). Key separada para o state do próprio bootstrap.
-          WORKSPACE_BUCKET="tf-org-workspace-state-${AWS_ACCOUNT_ID}"
-          WORKSPACE_TABLE="tf-org-workspace-locks-${AWS_ACCOUNT_ID}"
-          STATE_KEY="bootstrap/terraform.tfstate"
+            BUCKET="tf-org-workspace-state-${AWS_ACCOUNT_ID}"
+            TABLE="tf-org-workspace-locks-${AWS_ACCOUNT_ID}"
+            KEY="bootstrap/terraform.tfstate"
+            VARS="-var=aws_account_id=${AWS_ACCOUNT_ID} -var=aws_region=${AWS_REGION}"
+            BACKEND_CFG="-backend-config=bucket=${BUCKET} -backend-config=key=${KEY} \
+                        -backend-config=region=${AWS_REGION} -backend-config=dynamodb_table=${TABLE}"
 
-          backend_init() {
-            terraform init -input=false \
-              -backend-config="bucket=${WORKSPACE_BUCKET}" \
-              -backend-config="key=${STATE_KEY}" \
-              -backend-config="region=${AWS_REGION}" \
-              -backend-config="dynamodb_table=${WORKSPACE_TABLE}" \
-              "$@"
-          }
-
-          if aws s3api head-bucket --bucket "${WORKSPACE_BUCKET}" 2>/dev/null; then
-            echo "Backend: s3://${WORKSPACE_BUCKET}/${STATE_KEY} (locks: ${WORKSPACE_TABLE})"
-            backend_init
-          else
-            echo "Primeiro bootstrap nesta conta: apply com state local, depois migração para s3://${WORKSPACE_BUCKET}/${STATE_KEY}"
+            if ! aws s3api head-bucket --bucket "${BUCKET}" 2>/dev/null; then
+            echo "==> Primeiro bootstrap: state local"
             terraform init -backend=false -input=false
-            terraform apply -auto-approve -input=false \
-              -var="aws_account_id=${AWS_ACCOUNT_ID}" \
-              -var="aws_region=${AWS_REGION}"
-            # -reconfigure evita restos do init -backend=false confundirem o backend S3
-            backend_init -reconfigure -migrate-state
-          fi
+            terraform apply -auto-approve -input=false ${VARS}
 
-          terraform apply -auto-approve -input=false \
-            -var="aws_account_id=${AWS_ACCOUNT_ID}" \
-            -var="aws_region=${AWS_REGION}"
+            terraform init -input=false -migrate-state ${BACKEND_CFG}
+            else
+            echo "==> Backend já existe: init normal"
+            terraform init -input=false -reconfigure ${BACKEND_CFG}
+            fi
 
-          echo "s3_bucket_name=$(terraform output -raw s3_bucket_name)" >> "$GITHUB_OUTPUT"
-          echo "dynamo_table_name=$(terraform output -raw dynamodb_table_name)" >> "$GITHUB_OUTPUT"
+            terraform apply -auto-approve -input=false ${VARS}
+
+            echo "s3_bucket_name=$(terraform output -raw s3_bucket_name)"         >> "$GITHUB_OUTPUT"
+            echo "dynamo_table_name=$(terraform output -raw dynamodb_table_name)"  >> "$GITHUB_OUTPUT"
