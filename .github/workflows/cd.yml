@@ -8,8 +8,8 @@ on:
       - prod
 
 jobs:
-  BootstrapBucketCreation:
-    name: Bootstrap (${{ github.ref_name }})
+  TerraformStateBackend:
+    name: Terraform state backend (${{ github.ref_name }})
     runs-on: ubuntu-latest
     if: contains(fromJSON('["dev","homolog","prod"]'), github.ref_name)
     permissions:
@@ -17,8 +17,9 @@ jobs:
       contents: read
 
     outputs:
-      s3_bucket_name: ${{ steps.bootstrap.outputs.s3_bucket_name }}
-      dynamo_table_name: ${{ steps.bootstrap.outputs.dynamo_table_name }}
+      s3_bucket_name: ${{ steps.deploy.outputs.s3_bucket_name }}
+      dynamo_table_name: ${{ steps.deploy.outputs.dynamo_table_name }}
+      aws_region: ${{ steps.deploy.outputs.aws_region }}
 
     steps:
       - name: Checkout repository
@@ -32,7 +33,7 @@ jobs:
               echo "AWS_REGION=${{ vars.AWS_REGION }}" >> $GITHUB_ENV
               ;;
             homolog)
-              echo "AWS_ACCOUNT_ID=${{ secrets.AWS_ACCOUNT_ID_HOMOLOG }}" >> $GITHUB_ENV
+              echo "AWS_ACCOUNT_ID=${{ secrets.AWS_ACCOUNT_ID_HOML }}" >> $GITHUB_ENV
               echo "AWS_REGION=${{ vars.AWS_REGION }}" >> $GITHUB_ENV
               ;;
             prod)
@@ -50,44 +51,22 @@ jobs:
         with:
           aws-region: ${{ env.AWS_REGION }}
           role-to-assume: arn:aws:iam::${{ env.AWS_ACCOUNT_ID }}:role/GithubActionsRole
-          role-session-name: github-action-terraform-bootstrap
+          role-session-name: github-action-terraform-state-cdk
 
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
         with:
-          terraform_version: 1.6.6
-          cli_config_credentials_token: ${{ secrets.TFE_API_TOKEN }}
-          terraform_wrapper: false
+          python-version: "3.13"
 
-      - name: Bootstrap S3 state backend
-        id: bootstrap
-        shell: bash
-        working-directory: ./terraform
-        env:
-            AWS_ACCOUNT_ID: ${{ env.AWS_ACCOUNT_ID }}
-            AWS_REGION: ${{ env.AWS_REGION }}
+      - name: Install dependencies
         run: |
-            set -euo pipefail
-
-            BUCKET="tf-org-workspace-state-${AWS_ACCOUNT_ID}"
-            TABLE="tf-org-workspace-locks-${AWS_ACCOUNT_ID}"
-            KEY="bootstrap/terraform.tfstate"
-            VARS="-var=aws_account_id=${AWS_ACCOUNT_ID} -var=aws_region=${AWS_REGION}"
-            BACKEND_CFG="-backend-config=bucket=${BUCKET} -backend-config=key=${KEY} \
-                        -backend-config=region=${AWS_REGION} -backend-config=dynamodb_table=${TABLE}"
-
-            if ! aws s3api head-bucket --bucket "${BUCKET}" 2>/dev/null; then
-            echo "==> Primeiro bootstrap: state local"
-            terraform init -backend=false -input=false
-            terraform apply -auto-approve -input=false ${VARS}
-
-            terraform init -input=false -migrate-state ${BACKEND_CFG}
-            else
-            echo "==> Backend já existe: init normal"
-            terraform init -input=false -reconfigure ${BACKEND_CFG}
-            fi
-
-            terraform apply -auto-approve -input=false ${VARS}
-
-            echo "s3_bucket_name=$(terraform output -raw s3_bucket_name)"         >> "$GITHUB_OUTPUT"
-            echo "dynamo_table_name=$(terraform output -raw dynamodb_table_name)"  >> "$GITHUB_OUTPUT"
+          pip install -r cdk/requirements.txt
+        
+      - name: Deploy with CDK
+        run: |
+          cd cdk
+          npx aws-cdk@2 synth
+          npx aws-cdk@2 deploy --require-approval never

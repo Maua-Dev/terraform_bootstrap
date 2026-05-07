@@ -1,0 +1,7 @@
+node_modules
+cdk.out
+*.log
+.DS_Store
+.venv
+__pycache__/
+*.py[cod]
