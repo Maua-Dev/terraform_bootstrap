@@ -15,12 +15,7 @@ class S3Construct(Construct):
         **kwargs
     ) -> None:
         
-        super().__init__(
-            scope,
-            construct_id,
-            description="Construct para instanciar recursos s3",
-            **kwargs,
-        )
+        super().__init__(scope, construct_id, **kwargs)
         
         account = Aws.ACCOUNT_ID
 

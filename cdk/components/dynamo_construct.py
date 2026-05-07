@@ -3,6 +3,9 @@ from aws_cdk import Aws
 from constructs import Construct
 
 class DynamoConstruct(Construct):
+    
+    lock_table: dynamodb.Table
+    
     def __init__(
         self, 
         scope: Construct, 
@@ -10,12 +13,7 @@ class DynamoConstruct(Construct):
         **kwargs
     ) -> None:
         
-        super().__init__(
-            scope,
-            construct_id,
-            description="Construct para instanciar recursos dynamo",
-            **kwargs,
-        )
+        super().__init__(scope, construct_id, **kwargs)
         
         account = Aws.ACCOUNT_ID
         

@@ -2,6 +2,7 @@ from constructs import Construct
 from aws_cdk import Stack
 from components.s3_construct import S3Construct
 from components.dynamo_construct import DynamoConstruct
+from components.ssm_construct import SsmConstruct
 from aws_cdk import CfnOutput
 
 class TerraformStateBackendStack(Stack):
@@ -20,27 +21,6 @@ class TerraformStateBackendStack(Stack):
             **kwargs,
         )
         
-        s3_construct = S3Construct(self, "S3Construct")
-        dynamo_construct = DynamoConstruct(self, "DynamoConstruct")
-        
-        CfnOutput(
-            self,
-            "StateBucketName",
-            value=s3_construct.state_bucket.bucket_name,
-            description="Bucket S3 para tfstate (use no backend Terraform)",
-        )
-        CfnOutput(
-            self,
-            "LockTableName",
-            value=dynamo_construct.lock_table.table_name,
-            description="Tabela DynamoDB para lock do state",
-        )
-        CfnOutput(
-            self,
-            "AwsRegion",
-            value=self.region,
-            description="Região do backend",
-        )
-
-        
-    
+        s3_construct = S3Construct(self, "S3")
+        dynamo_construct = DynamoConstruct(self, "Dynamo")
+        ssm_construct = SsmConstruct(self, "SSM", state_bucket=s3_construct.state_bucket, lock_table=dynamo_construct.lock_table)
